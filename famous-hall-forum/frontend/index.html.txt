@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>名人堂论坛</title>
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="logo">🏛️ 名人堂</div>
+        <nav class="nav">
+            <a href=" " onclick="showSection('home')">首页</a >
+            <a href="#" onclick="showSection('profile')">个人中心</a >
+            <a href="#" onclick="showSection('post')">发帖</a >
+        </nav>
+        <div class="user-info" id="userInfo">
+            <button onclick="showLogin()">登录/注册</button>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <section id="home-section">
+            <div class="post-list" id="postList">
+                <!-- 动态加载帖子 -->
+            </div>
+        </section>
+
+        <section id="profile-section" style="display: none;">
+            <div class="profile-card">
+                <div class="avatar">
+                    < img id="userAvatar" src="static/img/default-avatar.png" alt="头像">
+                    <input type="file" id="avatarUpload" accept="image/*">
+                </div>
+                <div class="user-details">
+                    <h2 id="username">用户名</h2>
+                    <p>总打赏: ¥<span id="totalTips">0</span></p >
+                    <div class="badges" id="userBadges">
+                        <!-- 徽章展示 -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="post-section" style="display: none;">
+            <form class="post-form" id="postForm">
+                <input type="text" placeholder="标题" required>
+                <textarea placeholder="内容..." required></textarea>
+                <input type="file" multiple accept="image/*">
+                <button type="submit">发布</button>
+            </form>
+        </section>
+    </main>
+
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <span class="close">×</span>
+            <h2>登录/注册</h2>
+            <form id="authForm">
+                <input type="text" placeholder="用户名" required>
+                <input type="password" placeholder="密码" required>
+                <button type="submit">登录</button>
+                <p>还没有账号？<a href="#" onclick="toggleAuth()">立即注册</a ></p >
+            </form>
+        </div>
+    </div>
+
+    <script src="static/js/app.js"></script>
+</body>
+</html>

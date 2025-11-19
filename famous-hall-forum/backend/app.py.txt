@@ -1,0 +1,164 @@
+from flask import Flask, request, jsonify, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+import os
+import jwt
+from datetime import datetime, timedelta
+from functools import wraps
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///famous_hall.db'
+app.config['UPLOAD_FOLDER'] = 'static/uploads'
+db = SQLAlchemy(app)
+
+# 数据模型
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    avatar = db.Column(db.String(200), default='default-avatar.png')
+    total_tips = db.Column(db.Float, default=0.0)
+    badges = db.Column(db.String(500), default='')
+
+    def get_badges(self):
+        return self.badges.split(',') if self.badges else []
+
+    def add_badge(self, badge):
+        badges = self.get_badges()
+        if badge not in badges:
+            badges.append(badge)
+            self.badges = ','.join(badges)
+
+class Post(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    images = db.Column(db.String(1000), default='')
+    tips = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    author = db.relationship('User', backref=db.backref('posts', lazy=True))
+
+class Tip(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    amount = db.Column(db.Float, nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    tipper_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# 认证装饰器
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'message': 'Token is missing!'}), 401
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user = User.query.get(data['user_id'])
+        except:
+            return jsonify({'message': 'Token is invalid!'}), 401
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+# API路由
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    if User.query.filter_by(username=data['username']).first():
+        return jsonify({'message': '用户名已存在'}), 400
+    hashed_password = generate_password_hash(data['password'])
+    new_user = User(username=data['username'], password_hash=hashed_password)
+    new_user.add_badge('新人')
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({'message': '注册成功'}), 201
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(username=data['username']).first()
+    if not user or not check_password_hash(user.password_hash, data['password']):
+        return jsonify({'message': '用户名或密码错误'}), 401
+    token = jwt.encode({
+        'user_id': user.id,
+        'exp': datetime.utcnow() + timedelta(days=30)
+    }, app.config['SECRET_KEY'])
+    return jsonify({
+        'success': True,
+        'token': token,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'avatar': user.avatar,
+            'total_tips': user.total_tips,
+            'badges': user.get_badges()
+        }
+    })
+
+@app.route('/api/posts', methods=['GET'])
+def get_posts():
+    posts = Post.query.order_by(Post.created_at.desc()).all()
+    return jsonify([{
+        'id': post.id,
+        'title': post.title,
+        'content': post.content,
+        'author': post.author.username,
+        'avatar': f'/static/uploads/{post.author.avatar}',
+        'images': [f'/static/uploads/{img}' for img in post.images.split(',')] if post.images else [],
+        'tips': post.tips,
+        'created_at': post.created_at.isoformat()
+    } for post in posts])
+
+@app.route('/api/posts', methods=['POST'])
+def create_post():
+    title = request.form['title']
+    content = request.form['content']
+    images = []
+    if 'images' in request.files:
+        files = request.files.getlist('images')
+        for file in files:
+            if file and file.filename:
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                images.append(filename)
+    new_post = Post(
+        title=title,
+        content=content,
+        author_id=1,
+        images=','.join(images)
+    )
+    db.session.add(new_post)
+    user = User.query.get(1)
+    user.add_badge('活跃')
+    db.session.commit()
+    return jsonify({'message': '发帖成功'}), 201
+
+@app.route('/api/tip/<int:post_id>', methods=['POST'])
+def tip_post(post_id):
+    data = request.get_json()
+    amount = data.get('amount', 0)
+    if amount <= 0:
+        return jsonify({'message': '金额无效'}), 400
+    post = Post.query.get_or_404(post_id)
+    new_tip = Tip(
+        amount=amount,
+        post_id=post_id,
+        tipper_id=1
+    )
+    post.tips += amount
+    post.author.total_tips += amount
+    if post.author.total_tips >= 100:
+        post.author.add_badge('慷慨')
+    if post.author.total_tips >= 1000:
+        post.author.add_badge('富豪')
+    db.session.add(new_tip)
+    db.session.commit()
+    return jsonify({'message': '打赏成功'})
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)

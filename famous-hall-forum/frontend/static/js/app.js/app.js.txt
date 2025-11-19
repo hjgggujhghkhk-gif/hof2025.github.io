@@ -1,0 +1,160 @@
+// API配置
+const API_BASE = 'http://localhost:5000/api';
+
+// 用户认证
+class Auth {
+    static async login(username, password) {
+        const response = await fetch(`${API_BASE}/login`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password})
+        });
+        return response.json();
+    }
+
+    static async register(username, password) {
+        const response = await fetch(`${API_BASE}/register`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password})
+        });
+        return response.json();
+    }
+}
+
+// 帖子管理
+class PostManager {
+    static async loadPosts() {
+        const response = await fetch(`${API_BASE}/posts`);
+        const posts = await response.json();
+        const postList = document.getElementById('postList');
+        postList.innerHTML = posts.map(post => `
+            <div class="post-card">
+                <div class="post-header">
+                    < img class="post-avatar" src="${post.avatar}" alt="头像">
+                    <div>
+                        <h3>${post.title}</h3>
+                        <small>by ${post.author}</small>
+                    </div>
+                </div>
+                <p>${post.content}</p >
+                ${post.images ? post.images.map(img => 
+                    `< img src="${img}" style="max-width: 100%; margin: 0.5rem 0;" alt="帖子图片">`
+                ).join('') : ''}
+                <div class="post-actions">
+                    <button class="tip-btn" onclick="tipPost(${post.id})">
+                        💰 打赏 (${post.tips})
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    static async createPost(formData) {
+        const response = await fetch(`${API_BASE}/posts`, {
+            method: 'POST',
+            body: formData
+        });
+        return response.json();
+    }
+}
+
+// 打赏功能
+async function tipPost(postId) {
+    const amount = prompt('请输入打赏金额:');
+    if (amount && !isNaN(amount)) {
+        const response = await fetch(`${API_BASE}/tip/${postId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({amount: parseFloat(amount)})
+        });
+        if (response.ok) {
+            alert('打赏成功!');
+            PostManager.loadPosts();
+            loadUserProfile();
+        }
+    }
+}
+
+// 用户资料功能
+function loadUserProfile() {
+    console.log('加载用户资料');
+}
+
+function updateUserUI(user) {
+    document.getElementById('username').textContent = user.username;
+    document.getElementById('userAvatar').src = user.avatar;
+    document.getElementById('totalTips').textContent = user.total_tips;
+    const badgesContainer = document.getElementById('userBadges');
+    badgesContainer.innerHTML = user.badges.map(badge => 
+        `<span class="badge">${badge}</span>`
+    ).join('');
+}
+
+// 页面切换
+function showSection(section) {
+    document.querySelectorAll('section').forEach(s => s.style.display = 'none');
+    document.getElementById(`${section}-section`).style.display = 'block';
+    if (section === 'home') PostManager.loadPosts();
+    if (section === 'profile') loadUserProfile();
+}
+
+// 登录模态框
+function showLogin() {
+    document.getElementById('loginModal').style.display = 'block';
+}
+
+function closeModal() {
+    document.getElementById('loginModal').style.display = 'none';
+}
+
+function toggleAuth() {
+    const authForm = document.getElementById('authForm');
+    const submitButton = authForm.querySelector('button[type="submit"]');
+    const toggleLink = authForm.querySelector('a');
+    
+    if (submitButton.textContent === '登录') {
+        submitButton.textContent = '注册';
+        toggleLink.textContent = '已有账号？立即登录';
+    } else {
+        submitButton.textContent = '登录';
+        toggleLink.textContent = '还没有账号？立即注册';
+    }
+}
+
+// 初始化
+document.addEventListener('DOMContentLoaded', () => {
+    PostManager.loadPosts();
+
+    document.querySelector('.close').addEventListener('click', closeModal);
+
+    document.getElementById('authForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const username = formData.get('username');
+        const password = formData.get('password');
+        
+        const isLogin = e.submitter.textContent === '登录';
+        let result;
+        
+        if (isLogin) {
+            result = await Auth.login(username, password);
+        } else {
+            result = await Auth.register(username, password);
+        }
+        
+        if (result.success) {
+            localStorage.setItem('token', result.token);
+            document.getElementById('loginModal').style.display = 'none';
+            updateUserUI(result.user);
+        }
+    });
+
+    document.getElementById('postForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        await PostManager.createPost(formData);
+        e.target.reset();
+        showSection('home');
+    });
+});
